@@ -73,6 +73,7 @@ class UserManagement(tk.Frame):
         self.tree.column("last_login", width=150, anchor="center")
         
         self.tree.pack(fill="both", expand=True)
+        self.tree.bind("<Double-1>", self.on_double_click)
 
         # --- Actions ---
         actions_frame = tk.Frame(self)
@@ -114,6 +115,13 @@ class UserManagement(tk.Frame):
         except Exception as e:
             messagebox.showerror("Database Error", f"Failed to load users:\n{e}", parent=self)
 
+    def on_double_click(self, event):
+        """Handle double-click event on the treeview."""
+        item = self.tree.identify_row(event.y)
+        if item:
+            self.tree.selection_set(item)
+            self.user_form(is_edit=True)
+
     def user_form(self, is_edit=False):
         selected_id = None
         user_data = None
@@ -128,7 +136,7 @@ class UserManagement(tk.Frame):
 
         top = tk.Toplevel(self)
         top.title("Edit User" if is_edit else "Create New User")
-        top.geometry("400x400")
+        top.geometry("400x450")
         top.transient(self)
         top.grab_set()
 
@@ -141,29 +149,34 @@ class UserManagement(tk.Frame):
         fullname_ent = tk.Entry(top, width=30)
         fullname_ent.grid(row=1, column=1, pady=10)
 
+        tk.Label(top, text="Email *").grid(row=2, column=0, sticky="e", padx=10, pady=10)
+        email_ent = tk.Entry(top, width=30)
+        email_ent.grid(row=2, column=1, pady=10)
+
         # Password logic: Required for new users, optional for editing
         pwd_label_text = "New Password" if is_edit else "Password *"
-        tk.Label(top, text=pwd_label_text).grid(row=2, column=0, sticky="e", padx=10, pady=10)
+        tk.Label(top, text=pwd_label_text).grid(row=3, column=0, sticky="e", padx=10, pady=10)
         password_ent = tk.Entry(top, width=30, show="*")
-        password_ent.grid(row=2, column=1, pady=10)
+        password_ent.grid(row=3, column=1, pady=10)
         
         if is_edit:
-            tk.Label(top, text="(Leave blank to keep current)", font=("Helvetica", 8), fg="gray").grid(row=3, column=1, sticky="w")
+            tk.Label(top, text="(Leave blank to keep current)", font=("Helvetica", 8), fg="gray").grid(row=4, column=1, sticky="w")
 
-        tk.Label(top, text="Role").grid(row=4, column=0, sticky="e", padx=10, pady=10)
+        tk.Label(top, text="Role").grid(row=5, column=0, sticky="e", padx=10, pady=10)
         role_cb = ttk.Combobox(top, values=("Admin", "Staff"), state="readonly", width=15)
         role_cb.set("Staff")
-        role_cb.grid(row=4, column=1, sticky="w", pady=10)
+        role_cb.grid(row=5, column=1, sticky="w", pady=10)
 
-        tk.Label(top, text="Status").grid(row=5, column=0, sticky="e", padx=10, pady=10)
+        tk.Label(top, text="Status").grid(row=6, column=0, sticky="e", padx=10, pady=10)
         status_cb = ttk.Combobox(top, values=("Active", "Inactive"), state="readonly", width=15)
         status_cb.set("Active")
-        status_cb.grid(row=5, column=1, sticky="w", pady=10)
+        status_cb.grid(row=6, column=1, sticky="w", pady=10)
 
         # Pre-fill data if editing
         if is_edit and user_data:
             username_ent.insert(0, user_data['username'])
             fullname_ent.insert(0, user_data['full_name'])
+            email_ent.insert(0, user_data['email'])
             role_cb.set(user_data['role'])
             status_cb.set(user_data['status'])
             
@@ -175,23 +188,24 @@ class UserManagement(tk.Frame):
         def save_user():
             username = username_ent.get().strip()
             fullname = fullname_ent.get().strip()
+            email = email_ent.get().strip()
             password = password_ent.get().strip()
             role = role_cb.get()
             status = status_cb.get()
 
-            if not username or not fullname:
-                messagebox.showwarning("Validation Error", "Username and Full Name are required.", parent=top)
+            if not username or not fullname or not email:
+                messagebox.showwarning("Validation Error", "Username, Full Name, and Email are required.", parent=top)
                 return
 
             try:
                 # Note: In a production application, passwords MUST be hashed (e.g., using bcrypt or hashlib)
                 if is_edit:
                     if password:
-                        query = "UPDATE Users SET username=%s, full_name=%s, password=%s, role=%s, status=%s WHERE user_id=%s"
-                        params = (username, fullname, password, role, status, selected_id)
+                        query = "UPDATE Users SET username=%s, full_name=%s, email=%s, password=%s, role=%s, status=%s WHERE user_id=%s"
+                        params = (username, fullname, email, password, role, status, selected_id)
                     else:
-                        query = "UPDATE Users SET username=%s, full_name=%s, role=%s, status=%s WHERE user_id=%s"
-                        params = (username, fullname, role, status, selected_id)
+                        query = "UPDATE Users SET username=%s, full_name=%s, email=%s, role=%s, status=%s WHERE user_id=%s"
+                        params = (username, fullname, email, role, status, selected_id)
                     
                     self.db.execute_query(query, params)
                     self.db.log_audit(self.current_user['user_id'], 'UPDATE', 'User', selected_id, f"Updated user profile for {username}")
@@ -201,14 +215,14 @@ class UserManagement(tk.Frame):
                         messagebox.showwarning("Validation Error", "Password is required for new users.", parent=top)
                         return
                         
-                    # Check for existing username
-                    existing = self.db.fetch_one("SELECT user_id FROM Users WHERE username = %s", (username,))
+                    # Check for existing username or email
+                    existing = self.db.fetch_one("SELECT user_id FROM Users WHERE username = %s OR email = %s", (username, email))
                     if existing:
-                        messagebox.showerror("Error", "Username already exists. Please choose another.", parent=top)
+                        messagebox.showerror("Error", "Username or Email already exists. Please choose another.", parent=top)
                         return
 
-                    query = "INSERT INTO Users (username, password, full_name, role, status) VALUES (%s, %s, %s, %s, %s)"
-                    new_id = self.db.execute_query(query, (username, password, fullname, role, status))
+                    query = "INSERT INTO Users (username, password, full_name, email, role, status) VALUES (%s, %s, %s, %s, %s, %s)"
+                    new_id = self.db.execute_query(query, (username, password, fullname, email, role, status))
                     self.db.log_audit(self.current_user['user_id'], 'CREATE', 'User', new_id, f"Created new user {username}")
 
                 messagebox.showinfo("Success", "User details saved successfully.", parent=top)
@@ -218,7 +232,7 @@ class UserManagement(tk.Frame):
             except Exception as e:
                 messagebox.showerror("Database Error", f"An error occurred:\n{e}", parent=top)
 
-        tk.Button(top, text="Save Details", bg="#2980B9", fg="white", width=20, command=save_user).grid(row=6, column=0, columnspan=2, pady=20)
+        tk.Button(top, text="Save Details", bg="#2980B9", fg="white", width=20, command=save_user).grid(row=7, column=0, columnspan=2, pady=20)
 
 # ==========================================
 # Testing Block

@@ -3,6 +3,7 @@ from tkinter import messagebox
 
 # Import all the modules we created
 from Login import Login
+from ForgotPassword import ForgotPasswordFrame
 from Dashboard import Dashboard
 from CreateOrder import CreateOrder
 from Orders import Orders
@@ -10,11 +11,12 @@ from Transactions import Transactions
 from Services import Services
 from Reports import Reports
 from UserManagement import UserManagement
+from dbManager import DatabaseManager
 
 class MainApp(tk.Tk):
     def __init__(self):
         super().__init__()
-
+        self.db = DatabaseManager()
         self.title("Coco Bubble Wash - Management System")
         self.configure(bg="#ECF0F1")
         self.minsize(900, 600)
@@ -97,7 +99,7 @@ class MainApp(tk.Tk):
     def init_frames(self):
         """Initializes all the module views and stores them in a dictionary."""
         frame_classes = (
-            Login, Dashboard, CreateOrder, Orders, 
+            Login, ForgotPasswordFrame, Dashboard, CreateOrder, Orders, 
             Transactions, Services, Reports, UserManagement
         )
 
@@ -120,6 +122,12 @@ class MainApp(tk.Tk):
         self.sidebar.pack_forget()
         self.container.pack(side="left", fill="both", expand=True)
         self.show_frame("Login")
+
+    def show_forgot_password(self):
+        """Shows the forgot password screen."""
+        self.sidebar.pack_forget()
+        self.container.pack(side="left", fill="both", expand=True)
+        self.show_frame("ForgotPasswordFrame")
 
     def show_dashboard(self, current_user):
         """Handles successful login, shows sidebar, and sets user context."""

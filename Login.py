@@ -58,6 +58,19 @@ class Login(tk.Frame):
         )
         self.login_btn.pack(pady=10)
         
+        # Forgot Password Link
+        tk.Button(
+            form_frame, 
+            text="Forgot Password?", 
+            font=("Helvetica", 10, "underline"), 
+            fg="#3498DB", 
+            bg=self.cget("bg"),
+            bd=0,
+            cursor="hand2",
+            activeforeground="#2980B9",
+            command=lambda: self.controller.show_forgot_password()
+        ).pack(pady=5)
+        
         self.password_entry.bind('<Return>', lambda event: self.handle_login())
         self.username_entry.bind('<Return>', lambda event: self.handle_login())
 
