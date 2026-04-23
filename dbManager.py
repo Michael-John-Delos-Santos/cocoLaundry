@@ -3,17 +3,12 @@ from mysql.connector import Error
 
 class DatabaseManager:
     def __init__(self, host='localhost', database='cocobubblewash', user='root', password=''):
-        """
-        Initialize the database connection parameters.
-        Change the 'user' and 'password' if your MySQL setup requires it.
-        """
         self.host = host
         self.database = database
         self.user = user
         self.password = password
 
     def connect(self):
-        """Establishes and returns a connection to the database."""
         try:
             conn = mysql.connector.connect(
                 host=self.host,
@@ -29,10 +24,6 @@ class DatabaseManager:
             return None
 
     def execute_query(self, query, params=None):
-        """
-        Executes INSERT, UPDATE, DELETE queries.
-        Returns the last inserted row ID on success, or None on failure.
-        """
         conn = self.connect()
         if not conn:
             return None
@@ -53,10 +44,6 @@ class DatabaseManager:
                 conn.close()
 
     def fetch_all(self, query, params=None):
-        """
-        Executes SELECT queries that return multiple rows.
-        Returns a list of dictionaries.
-        """
         conn = self.connect()
         if not conn:
             return []
@@ -76,10 +63,6 @@ class DatabaseManager:
                 conn.close()
 
     def fetch_one(self, query, params=None):
-        """
-        Executes SELECT queries that return a single row.
-        Returns a dictionary or None.
-        """
         conn = self.connect()
         if not conn:
             return None
@@ -98,9 +81,6 @@ class DatabaseManager:
                 conn.close()
 
     def log_audit(self, user_id, action_type, entity_type, entity_id, description, old_value=None, new_value=None):
-        """
-        Helper method to insert audit logs easily across the application.
-        """
         query = """
             INSERT INTO Audit_Logs 
             (user_id, action_type, entity_type, entity_id, description, old_value, new_value)

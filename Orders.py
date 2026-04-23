@@ -2,6 +2,8 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from dbManager import DatabaseManager
 from datetime import datetime
+from EmailHelper import EmailHelper
+import threading
 import time
 
 class Orders(tk.Frame):
@@ -11,7 +13,6 @@ class Orders(tk.Frame):
         self.db = DatabaseManager()
         self.current_user = None
         
-        # Reference data for editing
         self.services_data = {}
         self.addons_data = {}
         
@@ -20,7 +21,6 @@ class Orders(tk.Frame):
 
     def set_user(self, user):
         self.current_user = user
-        self.load_filters()
         self.load_orders()
         self.load_reference_data()
 
@@ -31,100 +31,96 @@ class Orders(tk.Frame):
         self.addons_data = {a['addon_name']: a for a in addons}
 
     def create_widgets(self):
-        # --- Header ---
         header_frame = tk.Frame(self)
         header_frame.pack(fill="x", pady=(0, 10))
         tk.Label(header_frame, text="Active Orders Management", font=("Helvetica", 16, "bold"), fg="#2C3E50").pack(side="left")
 
-        # --- Quick Search ---
         filter_frame = tk.LabelFrame(self, text="Search Orders", padx=10, pady=10)
         filter_frame.pack(fill="x", pady=(0, 15))
         self.search_ent = tk.Entry(filter_frame, width=40)
         self.search_ent.pack(side="left", padx=5)
         tk.Button(filter_frame, text="Search/Refresh", command=self.load_orders).pack(side="left")
 
-        # --- Main Table ---
         columns = ("id", "display_id", "customer", "status", "payment", "amount", "date")
         self.tree = ttk.Treeview(self, columns=columns, show="headings", height=15)
         
-        self.tree.heading("id", text="ID")
-        self.tree.heading("display_id", text="Order ID")
-        self.tree.heading("customer", text="Customer")
-        self.tree.heading("status", text="Status")
-        self.tree.heading("payment", text="Payment")
-        self.tree.heading("amount", text="Total")
-        self.tree.heading("date", text="Date")
+        for col in columns:
+            self.tree.heading(col, text=col.replace("_", " ").title())
         
-        self.tree.column("id", width=0, stretch=tk.NO) # Hidden ID
+        self.tree.column("id", width=0, stretch=tk.NO)
         self.tree.pack(fill="both", expand=True)
 
-        # --- ACTIONS BAR (Restored Buttons) ---
         actions_frame = tk.Frame(self)
         actions_frame.pack(fill="x", pady=(10, 0))
 
-        tk.Button(actions_frame, text="View/Edit Details", bg="#3498DB", fg="white", width=15, 
-                  command=self.view_details).pack(side="left", padx=(0, 10))
-        
-        tk.Button(actions_frame, text="Mark as Paid", bg="#27AE60", fg="white", width=15,
-                  command=self.mark_as_paid).pack(side="left", padx=10)
-        
-        tk.Button(actions_frame, text="Move to Ready", bg="#F39C12", fg="white", width=15,
-                  command=lambda: self.update_status("Ready to Claim")).pack(side="left", padx=10)
-        
-        tk.Button(actions_frame, text="Mark Claimed", bg="#8E44AD", fg="white", width=15,
-                  command=lambda: self.update_status("Claimed")).pack(side="left", padx=10)
+        tk.Button(actions_frame, text="View Details", bg="#3498DB", fg="white", width=15, command=self.view_details).pack(side="left", padx=(0, 10))
+        tk.Button(actions_frame, text="Mark as Paid", bg="#27AE60", fg="white", width=15, command=self.mark_as_paid).pack(side="left", padx=10)
+        tk.Button(actions_frame, text="Move to Ready", bg="#F39C12", fg="white", width=15, command=lambda: self.update_status("Ready to Claim")).pack(side="left", padx=10)
+        tk.Button(actions_frame, text="Mark Claimed", bg="#8E44AD", fg="white", width=15, command=lambda: self.update_status("Claimed")).pack(side="left", padx=10)
 
     def load_orders(self):
         for item in self.tree.get_children(): self.tree.delete(item)
         search_term = f"%{self.search_ent.get()}%"
-        query = """
-            SELECT transaction_id, display_id, customer_name, status, payment_status, total_amount, created_at 
-            FROM Transactions 
-            WHERE void_status='Active' AND status != 'Claimed' AND customer_name LIKE %s 
-            ORDER BY created_at DESC
-        """
+        query = "SELECT * FROM Transactions WHERE void_status='Active' AND status != 'Claimed' AND customer_name LIKE %s ORDER BY created_at DESC"
         records = self.db.fetch_all(query, (search_term,))
         for row in records:
-            self.tree.insert("", "end", values=(
-                row['transaction_id'], row['display_id'], row['customer_name'], 
-                row['status'], row['payment_status'], f"₱{row['total_amount']:,.2f}", row['created_at']
-            ))
-
-    def load_filters(self): pass 
+            self.tree.insert("", "end", values=(row['transaction_id'], row['display_id'], row['customer_name'], row['status'], row['payment_status'], f"₱{row['total_amount']:,.2f}", row['created_at']))
 
     def get_selected_order_id(self):
         sel = self.tree.selection()
-        if not sel:
-            messagebox.showwarning("Selection", "Please select an order from the list.")
-            return None
-        return self.tree.item(sel[0])['values'][0]
-
-    # --- Restoration of Logic for Status Buttons ---
+        return self.tree.item(sel[0])['values'][0] if sel else None
 
     def mark_as_paid(self):
         trans_id = self.get_selected_order_id()
-        if not trans_id: return
-        if messagebox.askyesno("Confirm", "Mark this order as Paid?"):
+        if trans_id and messagebox.askyesno("Confirm", "Mark as Paid?"):
             self.db.execute_query("UPDATE Transactions SET payment_status = 'Paid' WHERE transaction_id = %s", (trans_id,))
             self.db.log_audit(self.current_user['user_id'], 'UPDATE', 'Transaction', trans_id, "Marked as Paid")
             self.load_orders()
 
     def update_status(self, new_status):
-        trans_id = self.get_selected_order_id()
-        if not trans_id: return
-        
-        if new_status == "Claimed":
-            # Safety check for unpaid orders
-            item_values = self.tree.item(self.tree.selection()[0])['values']
-            if item_values[4] == "Unpaid":
-                if not messagebox.askyesno("Warning", "Order is UNPAID. Still mark as Claimed?"): return
+        sel = self.tree.selection()
+        if not sel:
+            messagebox.showwarning("Selection", "Please select an order from the list.")
+            return
 
-        if messagebox.askyesno("Confirm", f"Change status to {new_status}?"):
-            self.db.execute_query("UPDATE Transactions SET status = %s WHERE transaction_id = %s", (new_status, trans_id))
-            self.db.log_audit(self.current_user['user_id'], 'UPDATE', 'Transaction', trans_id, f"Status: {new_status}")
-            self.load_orders()
+        # 2. Extract current values (ID is index 0, Status is index 3)
+        item_values = self.tree.item(sel[0])['values']
+        trans_id = item_values[0]
+        current_status = item_values[3]
 
-    # ================= DETAIL & EDIT WINDOW =================
+        # 3. Validation: Prevent updating if the status is already the same
+        if current_status == new_status:
+            messagebox.showinfo("No Change", f"This order is already marked as '{new_status}'.")
+            return
+
+        # 4. Proceed with confirmation and update if it's a new status
+        if messagebox.askyesno("Confirm", f"Change status from '{current_status}' to '{new_status}'?"):
+            try:
+                # Update the database
+                self.db.execute_query("UPDATE Transactions SET status = %s WHERE transaction_id = %s", (new_status, trans_id))
+                self.db.log_audit(self.current_user['user_id'], 'UPDATE', 'Transaction', trans_id, f"Status: {new_status}")
+                
+                # Use threading for background email sending for specific status
+                if new_status == "Ready to Claim":
+                    order = self.db.fetch_one("SELECT * FROM Transactions WHERE transaction_id = %s", (trans_id,))
+                    if order and order.get('customer_email'):
+                        threading.Thread(target=self.run_email_thread, args=(order,), daemon=True).start()
+                
+                # Refresh the list to reflect changes
+                self.load_orders()
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to update status: {e}")
+
+    def run_email_thread(self, order):
+        success, error = EmailHelper.send_email(
+            db=self.db,
+            receiver=order['customer_email'],
+            subject_key='pickup_ready_subject',
+            body_key='pickup_ready_body',
+            placeholders={'{customer}': order['customer_name'], '{order_id}': order['display_id']}
+        )
+        if not success:
+            self.after(0, lambda: messagebox.showwarning("Email Warning", f"Order updated, but email failed: {error}"))
 
     def view_details(self):
         trans_id = self.get_selected_order_id()

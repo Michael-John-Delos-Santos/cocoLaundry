@@ -17,9 +17,8 @@ class CreateOrder(tk.Frame):
         self.categories_data = {}
         self.addons_data = {}
         
-        # Current batch state (temporary list of addons for the batch being built)
-        self.temp_addons = {} # Format: {addon_id: quantity}
-        # Finalized batches for the order
+        # Current batch state
+        self.temp_addons = {} 
         self.current_batches = [] 
         
         self.configure(padx=20, pady=20)
@@ -31,6 +30,7 @@ class CreateOrder(tk.Frame):
 
     def refresh_form(self):
         self.load_reference_data()
+        self.load_customer_emails() # New: Refresh emails on form refresh
         self.clear_form()
 
     def load_reference_data(self):
@@ -45,6 +45,13 @@ class CreateOrder(tk.Frame):
         addons = self.db.fetch_all("SELECT * FROM Addons WHERE status = 'Active'")
         self.addons_data = {a['addon_name']: a for a in addons}
         self.addon_selection_cb['values'] = list(self.addons_data.keys())
+
+    def load_customer_emails(self):
+        """Fetches unique emails from past transactions to populate the dropdown."""
+        query = "SELECT DISTINCT customer_email FROM Transactions WHERE customer_email IS NOT NULL AND customer_email != ''"
+        results = self.db.fetch_all(query)
+        emails = [r['customer_email'] for r in results]
+        self.cust_email_cb['values'] = emails
 
     def create_widgets(self):
         self.order_id_var = tk.StringVar()
@@ -71,6 +78,11 @@ class CreateOrder(tk.Frame):
         self.cust_name = tk.Entry(cust_frame, width=30)
         self.cust_name.grid(row=0, column=1, padx=5, pady=2)
 
+        # Added: Optional Email with Dropdown
+        tk.Label(cust_frame, text="Email (Optional)").grid(row=1, column=0, sticky="w")
+        self.cust_email_cb = ttk.Combobox(cust_frame, width=28)
+        self.cust_email_cb.grid(row=1, column=1, padx=5, pady=2)
+
         tk.Label(cust_frame, text="Pickup Date").grid(row=0, column=2, padx=(10,0))
         self.pickup_date = DateEntry(cust_frame, width=15, date_pattern='yyyy-mm-dd')
         self.pickup_date.grid(row=0, column=3, padx=5)
@@ -91,7 +103,6 @@ class CreateOrder(tk.Frame):
         self.weight_entry = tk.Entry(batch_frame, width=28)
         self.weight_entry.grid(row=2, column=1, pady=5, sticky="w")
 
-        # --- Sub-section: Add-on Dropdown & Quantity ---
         addon_labelframe = tk.LabelFrame(batch_frame, text="Select Add-ons", pady=10, padx=10)
         addon_labelframe.grid(row=3, column=0, columnspan=2, pady=10, sticky="ew")
 
@@ -109,7 +120,6 @@ class CreateOrder(tk.Frame):
         tk.Button(addon_labelframe, text="Apply Add-on to Batch", bg="#34495E", fg="white", 
                   command=self.apply_addon_to_temp).pack(pady=10)
 
-        # Display applied addons for the current batch
         self.applied_addons_lbl = tk.Label(addon_labelframe, text="Applied: None", fg="#7F8C8D", wraplength=350, justify="left")
         self.applied_addons_lbl.pack()
 
@@ -141,7 +151,6 @@ class CreateOrder(tk.Frame):
             self.temp_qty_var.set(new_val)
 
     def apply_addon_to_temp(self):
-        """Adds selected addon from dropdown to the local batch list."""
         name = self.addon_selection_cb.get()
         if not name:
             return
@@ -149,33 +158,22 @@ class CreateOrder(tk.Frame):
         addon_id = self.addons_data[name]['addon_id']
         qty = self.temp_qty_var.get()
         
-        # If already exists in this batch, add to it, otherwise set it
         self.temp_addons[addon_id] = self.temp_addons.get(addon_id, 0) + qty
         
-        # Update display label
         summary = [f"{self.addons_data[n]['addon_name']} (x{q})" for n, info in self.addons_data.items() 
                    for aid, q in self.temp_addons.items() if info['addon_id'] == aid]
         self.applied_addons_lbl.config(text=f"Applied: {', '.join(summary)}")
         
-        # Reset selection
         self.temp_qty_var.set(1)
         self.addon_selection_cb.set('')
 
     def add_batch_to_order(self):
-        """Finalizes the current batch inputs and moves it to the Cart."""
         s_name = self.service_cb.get().strip()
         c_name = self.category_cb.get().strip()
         w_val = self.weight_entry.get().strip()
 
-        # --- Input Verifiers ---
-        if not s_name:
-            messagebox.showwarning("Input Error", "Please select a Service.", parent=self)
-            return
-        if not c_name:
-            messagebox.showwarning("Input Error", "Please select a Category.", parent=self)
-            return
-        if not w_val:
-            messagebox.showwarning("Input Error", "Please enter the Weight.", parent=self)
+        if not s_name or not c_name or not w_val:
+            messagebox.showwarning("Input Error", "Please fill all required batch fields.", parent=self)
             return
 
         try:
@@ -190,7 +188,6 @@ class CreateOrder(tk.Frame):
         service = self.services_data[s_name]
         category = self.categories_data[c_name]
         
-        # Calculate pricing
         subtotal = float(service['base_price']) + (weight * float(service['price_per_kg']))
         
         final_addons = []
@@ -218,7 +215,6 @@ class CreateOrder(tk.Frame):
         self.cart_tree.insert("", "end", values=(s_name, weight, f"₱{subtotal:,.2f}"))
         self.update_total()
         
-        # Reset Batch UI
         self.temp_addons = {}
         self.applied_addons_lbl.config(text="Applied: None")
         self.weight_entry.delete(0, tk.END)
@@ -231,15 +227,15 @@ class CreateOrder(tk.Frame):
 
     def submit_order(self):
         name = self.cust_name.get().strip()
+        email = self.cust_email_cb.get().strip() # Added: Capture email
         
-        # --- Customer Name Verifier ---
         if not name:
-            messagebox.showwarning("Input Error", "Customer Name is required to save the order.", parent=self)
+            messagebox.showwarning("Input Error", "Customer Name is required.", parent=self)
             self.cust_name.focus_set()
             return
 
         if not self.current_batches:
-            messagebox.showwarning("Incomplete Order", "Please add at least one batch to the order before submitting.", parent=self)
+            messagebox.showwarning("Incomplete Order", "Please add at least one batch.", parent=self)
             return
 
         total_amount = sum(b['subtotal'] for b in self.current_batches)
@@ -247,12 +243,12 @@ class CreateOrder(tk.Frame):
         u_id = self.current_user['user_id'] if self.current_user else None
 
         try:
+            # Updated Query: Includes customer_email
             t_id = self.db.execute_query("""
-                INSERT INTO Transactions (display_id, customer_name, pickup_date, total_amount, created_by)
-                VALUES (%s, %s, %s, %s, %s)
-            """, (display_id, name, self.pickup_date.get(), total_amount, u_id))
+                INSERT INTO Transactions (display_id, customer_name, customer_email, pickup_date, total_amount, created_by)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (display_id, name, email if email else None, self.pickup_date.get(), total_amount, u_id))
             
-
             for b in self.current_batches:
                 b_id = self.db.execute_query("""
                     INSERT INTO Transaction_Batches (transaction_id, service_id, category_id, weight, price_per_unit, subtotal)
@@ -266,12 +262,14 @@ class CreateOrder(tk.Frame):
                     """, (b_id, a['addon_id'], a['quantity'], a['unit_price'], a['total_price']))
 
             messagebox.showinfo("Success", f"Order {display_id} saved!")
+            self.load_customer_emails() # Update email dropdown list
             self.clear_form()
         except Exception as e:
             messagebox.showerror("DB Error", str(e))
 
     def clear_form(self):
         self.cust_name.delete(0, tk.END)
+        self.cust_email_cb.set('') # Added: Clear email field
         self.current_batches = []
         self.temp_addons = {}
         self.applied_addons_lbl.config(text="Applied: None")
