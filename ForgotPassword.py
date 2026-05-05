@@ -4,7 +4,9 @@ import random
 import datetime
 from EmailHelper import EmailHelper
 from Validator import validate_password_complexity
-
+import threading
+import smtplib
+from email.message import EmailMessage
 class ForgotPasswordFrame(tk.Frame):
     def __init__(self, parent, controller):
         super().__init__(parent)
@@ -25,7 +27,7 @@ class ForgotPasswordFrame(tk.Frame):
         self.email_ent.pack(pady=10)
         self.request_btn = tk.Button(self.content_frame, text="Request OTP", bg="#3498db", fg="white", width=20, command=self.handle_otp_request)
         self.request_btn.pack(pady=5)
-        tk.Button(self.content_frame, text="Cancel", relief="flat", command=self.controller.show_login).pack()
+        tk.Button(self.content_frame, text="Cancel", bg="#E74C3C", fg="white", width=20, command=self.controller.show_login, cursor="hand2").pack(pady=(10, 0))
 
     def handle_otp_request(self):
         email = self.email_ent.get().strip()
@@ -66,7 +68,8 @@ class ForgotPasswordFrame(tk.Frame):
         self.otp_ent = tk.Entry(self.content_frame, width=15, justify="center", font=("Arial", 14))
         self.otp_ent.pack(pady=10)
         self.otp_ent.focus_set()
-        tk.Button(self.content_frame, text="Verify Code", bg="#f39c12", fg="white", width=20, command=self.handle_otp_verification).pack(pady=10)
+        tk.Button(self.content_frame, text="Verify Code", bg="#f39c12", fg="white", width=20, command=self.handle_otp_verification).pack(pady=(0, 10))
+        tk.Button(self.content_frame, text="Cancel / Back to Login", bg="#E74C3C", fg="white", width=20, command=self.cancel_reset, cursor="hand2").pack(pady=(0, 5))
 
     def show_new_password_view(self):
         self.clear_content()
@@ -80,7 +83,8 @@ class ForgotPasswordFrame(tk.Frame):
         self.confirm_pass_ent = tk.Entry(self.content_frame, width=35, show="*")
         self.confirm_pass_ent.pack(pady=5)
 
-        tk.Button(self.content_frame, text="Update Password", bg="#2ecc71", fg="white", width=20, command=self.handle_password_reset).pack(pady=20)
+        tk.Button(self.content_frame, text="Update Password", bg="#2ecc71", fg="white", width=20, command=self.handle_password_reset).pack(pady=(20, 10))
+        tk.Button(self.content_frame, text="Cancel / Back to Login", bg="#E74C3C", fg="white", width=20, command=self.cancel_reset, cursor="hand2").pack(pady=(0, 5))
 
     def handle_otp_request(self):
         email = self.email_ent.get().strip()
@@ -97,6 +101,14 @@ class ForgotPasswordFrame(tk.Frame):
             else:
                 messagebox.showerror("Not Found", "Account not found.")
         except Exception as e: messagebox.showerror("Error", str(e))
+
+    def cancel_reset(self):
+        self.target_email = None
+        self.verified_user_id = None
+        self.active_reset_id = None
+        self.show_email_view()
+        if self.controller and hasattr(self.controller, "show_login"):
+            self.controller.show_login()
 
     def send_email_thread(self, receiver, otp):
         try:

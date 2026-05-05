@@ -59,7 +59,7 @@ class MainApp(tk.Tk):
         self.create_nav_button("Dashboard", "Dashboard")
         self.create_nav_button("Create Order", "CreateOrder")
         self.create_nav_button("Active Orders", "Orders")
-        self.create_nav_button("Past Transactions", "Transactions")
+        self.create_nav_button("Transactions", "Transactions")
         
         # Admin-only separator
         self.admin_lbl = tk.Label(self.sidebar, text="ADMINISTRATION", bg="#2C3E50", fg="#7F8C8D", font=("Helvetica", 8, "bold"))

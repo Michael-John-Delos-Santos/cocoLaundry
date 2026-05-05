@@ -144,31 +144,37 @@ class Reports(tk.Frame):
         tk.Label(card, text=title, font=("Helvetica", 10), bg=color, fg="white").pack(anchor="w")
         tk.Label(card, textvariable=variable, font=("Helvetica", 16, "bold"), bg=color, fg="white").pack(anchor="w", pady=(2, 0))
 
-    def get_date_condition(self):
+    def get_date_condition(self, column="created_at"):
         time_filter = self.date_var.get()
         if time_filter == "Today":
-            return "DATE(created_at) = CURDATE()"
+            return f"DATE({column}) = CURDATE()"
         elif time_filter == "Last 7 Days":
-            return "created_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)"
+            return f"{column} >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)"
         elif time_filter == "This Month":
-            return "MONTH(created_at) = MONTH(CURDATE()) AND YEAR(created_at) = YEAR(CURDATE())"
+            return f"MONTH({column}) = MONTH(CURDATE()) AND YEAR({column}) = YEAR(CURDATE())"
         elif time_filter == "This Year":
-            return "YEAR(created_at) = YEAR(CURDATE())"
+            return f"YEAR({column}) = YEAR(CURDATE())"
         return "1=1" # All time
-
+    
     def generate_reports(self):
-        date_cond = self.get_date_condition()
+        # We define two conditions: one for created dates and one for voided dates
+        date_cond_created = self.get_date_condition("created_at")
+        date_cond_voided = self.get_date_condition("void_at")
+        
         try:
             # === SUMMARY STATS ===
+            # We remove the WHERE clause from the main query and move the date filters 
+            # inside the CASE statements for absolute accuracy.
             stats = self.db.fetch_one(f"""
                 SELECT 
-                    COUNT(CASE WHEN status = 'Claimed' AND void_status = 'Active' THEN 1 END) as finished_count,
-                    SUM(CASE WHEN void_status = 'Active' THEN total_amount ELSE 0 END) as total_sales,
-                    COUNT(CASE WHEN void_status = 'Active' THEN 1 END) as active_count,
-                    COUNT(CASE WHEN status != 'Claimed' AND void_status = 'Active' THEN 1 END) as unclaimed_count,
-                    COUNT(CASE WHEN payment_status = 'Unpaid' AND void_status = 'Active' THEN 1 END) as unpaid_count,
-                    COUNT(CASE WHEN void_status = 'Voided' THEN 1 END) as voided_count
-                FROM Transactions WHERE {date_cond}
+                    COUNT(CASE WHEN status = 'Claimed' AND void_status = 'Active' AND {date_cond_created} THEN 1 END) as finished_count,
+                    SUM(CASE WHEN void_status = 'Active' AND {date_cond_created} THEN total_amount ELSE 0 END) as total_sales,
+                    COUNT(CASE WHEN void_status = 'Active' AND {date_cond_created} THEN 1 END) as active_count,
+                    COUNT(CASE WHEN status != 'Claimed' AND void_status = 'Active' AND {date_cond_created} THEN 1 END) as unclaimed_count,
+                    COUNT(CASE WHEN payment_status = 'Unpaid' AND void_status = 'Active' AND {date_cond_created} THEN 1 END) as unpaid_count,
+                    COUNT(CASE WHEN void_status = 'Voided' AND {date_cond_voided} THEN 1 END) as voided_count
+                FROM Transactions 
+                WHERE ({date_cond_created}) OR ({date_cond_voided})
             """)
 
             t_sales = float(stats['total_sales'] or 0)
@@ -182,12 +188,11 @@ class Reports(tk.Frame):
             self.stat_vars["Unpaid Orders"].set(str(stats['unpaid_count']))
             self.stat_vars["Voided Transactions"].set(str(stats['voided_count']))
 
-            # === CHARTS ===
-            self.draw_sales_trend(date_cond)
-            self.draw_payment_pie(date_cond)
-
-            # === SERVICE PERFORMANCE ===
-            self.load_service_performance(date_cond)
+            # === CHARTS & PERFORMANCE ===
+            # Pass the creation date condition to the other methods
+            self.draw_sales_trend(date_cond_created)
+            self.draw_payment_pie(date_cond_created)
+            self.load_service_performance(date_cond_created)
 
         except Exception as e:
             print(f"Report Generation Error: {e}")
@@ -299,13 +304,3 @@ class Reports(tk.Frame):
             self.perf_add_tree.insert("", "end", values=(
                 rank, row['addon_name'], row['usage_count'], f"₱{row['total_income']:,.2f}"
             ))
-
-# Testing Block
-if __name__ == "__main__":
-    root = tk.Tk()
-    root.title("Test - Reports (Admin)")
-    root.geometry("900x650")
-    app = Reports(parent=root)
-    app.pack(expand=True, fill="both")
-    app.set_user({'user_id': 1, 'role': 'Admin', 'full_name': 'Test Admin'})
-    root.mainloop()

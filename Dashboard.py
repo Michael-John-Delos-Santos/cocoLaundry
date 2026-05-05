@@ -155,24 +155,3 @@ class Dashboard(tk.Frame):
 
         except Exception as e:
             messagebox.showerror("Database Error", f"Failed to load dashboard data:\n{e}", parent=self)
-
-# ==========================================
-# Testing Block
-# ==========================================
-if __name__ == "__main__":
-    root = tk.Tk()
-    root.title("Test - Dashboard Module")
-    root.geometry("800x600")
-    
-    class MockController:
-        def show_frame(self, page_name):
-            print(f"Switching to {page_name}")
-            
-    app = Dashboard(parent=root, controller=MockController())
-    app.pack(expand=True, fill="both")
-    
-    # Mock a user login
-    mock_user = {'user_id': 1, 'username': 'admin', 'full_name': 'System Admin', 'role': 'Admin'}
-    app.set_user(mock_user)
-    
-    root.mainloop()

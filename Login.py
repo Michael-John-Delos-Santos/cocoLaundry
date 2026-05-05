@@ -56,7 +56,20 @@ class Login(tk.Frame):
             cursor="hand2",
             command=self.handle_login
         )
-        self.login_btn.pack(pady=10)
+        self.login_btn.pack(pady=(10, 5))
+
+        self.forgot_btn = tk.Button(
+            form_frame,
+            text="Forgot Password?",
+            font=("Helvetica", 9, "underline"),
+            fg="#2980B9",
+            bd=0,
+            cursor="hand2",
+            activebackground="#ECF0F1",
+            activeforeground="#2980B9",
+            command=self.handle_forgot_password
+        )
+        self.forgot_btn.pack(pady=(0, 15))
         
         self.password_entry.bind('<Return>', lambda event: self.handle_login())
         self.username_entry.bind('<Return>', lambda event: self.handle_login())
@@ -102,3 +115,9 @@ class Login(tk.Frame):
                 
         except Exception as e:
             messagebox.showerror("System Error", f"Database connection error:\n{e}", parent=self)
+
+    def handle_forgot_password(self):
+        if self.controller and hasattr(self.controller, "show_forgot_password"):
+            self.controller.show_forgot_password()
+        else:
+            messagebox.showinfo("Forgot Password", "Password recovery is not available right now.", parent=self)
